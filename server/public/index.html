@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TabletPanel Control</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>TabletPanel</h1>
+    <span id="conn" class="pill offline">connecting…</span>
+  </header>
+
+  <main>
+    <section class="card wide">
+      <h2>Displays</h2>
+      <div id="devices" class="devices"><p class="muted">No tablets have connected yet.</p></div>
+    </section>
+
+    <section class="card wide">
+      <div class="card-head">
+        <h2>Display focus</h2>
+        <span id="focusStatus" class="muted"></span>
+      </div>
+      <p class="muted small">Sets what the lower half of the display shows. Auto lets the tablet pick: the long-range forecast in fair weather, an incoming-storm summary when rain or wind is on the way.</p>
+      <div id="focusModes" class="modes"></div>
+      <label class="inline">Hold for
+        <select id="focusMinutes">
+          <option value="0">until changed</option>
+          <option value="5">5 minutes</option>
+          <option value="15" selected>15 minutes</option>
+          <option value="60">1 hour</option>
+          <option value="240">4 hours</option>
+        </select>
+        <span class="muted small">then return to auto</span>
+      </label>
+    </section>
+
+    <section class="card">
+      <h2>Send alert</h2>
+      <p id="busNote" class="muted small" hidden>Alerts go through the shared MQTT bus, so every display gets them.
+        Send them from <a id="hubLink" href="/">Local services</a>. Scripts can still use <code>POST /api/alerts</code>.</p>
+      <form id="alertForm" class="stack">
+        <input name="title" placeholder="Title (optional)" maxlength="80">
+        <textarea name="message" placeholder="Message" rows="2" maxlength="400"></textarea>
+        <div class="seg" role="radiogroup" aria-label="Severity">
+          <label><input type="radio" name="severity" value="info" checked><span>Info</span></label>
+          <label><input type="radio" name="severity" value="warning"><span>Warning</span></label>
+          <label><input type="radio" name="severity" value="critical"><span>Critical</span></label>
+        </div>
+        <div class="row">
+          <label class="inline">Show for
+            <select name="duration">
+              <option value="">default</option>
+              <option value="30">30 s</option>
+              <option value="120">2 min</option>
+              <option value="600">10 min</option>
+              <option value="3600">1 hour</option>
+              <option value="0">until dismissed</option>
+            </select>
+          </label>
+          <label class="inline"><input type="checkbox" name="sound" checked> Chime</label>
+        </div>
+        <button type="submit" class="primary">Send to display</button>
+      </form>
+      <div class="presets" id="presets"></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>Active alerts</h2>
+        <button id="clearAlerts" class="ghost small">Clear all</button>
+      </div>
+      <ul id="alerts" class="list"></ul>
+    </section>
+
+    <section class="card">
+      <h2>Info notes</h2>
+      <p class="muted small">Short notes that scroll along the bottom of the display until removed.</p>
+      <form id="noteForm" class="row">
+        <input name="text" placeholder="e.g. Trash pickup tomorrow" maxlength="120" required>
+        <button type="submit">Add</button>
+      </form>
+      <ul id="notes" class="list"></ul>
+    </section>
+
+    <section class="card">
+      <h2>Display settings</h2>
+      <form id="settingsForm" class="stack">
+        <div class="row">
+          <label class="inline">Units
+            <select name="units"><option value="imperial">°F, mph, in</option><option value="metric">°C, km/h, mm</option></select>
+          </label>
+          <label class="inline"><input type="checkbox" name="clock24h"> 24-hour clock</label>
+        </div>
+        <fieldset>
+          <legend>Location</legend>
+          <label class="inline"><input type="checkbox" name="useTablet"> Use the tablet's own location</label>
+          <div class="row" id="locFields">
+            <input name="lat" type="number" step="any" placeholder="Latitude">
+            <input name="lon" type="number" step="any" placeholder="Longitude">
+            <input name="locName" placeholder="Name (optional)">
+          </div>
+          <button type="button" id="geoBtn" class="ghost small">Use this browser's location</button>
+        </fieldset>
+        <fieldset>
+          <legend>Screen</legend>
+          <label class="inline">Brightness
+            <input name="brightness" type="range" min="0" max="100" step="5">
+            <output id="brightnessOut"></output>
+          </label>
+          <label class="inline"><input type="checkbox" name="nightEnabled"> Dim when dark</label>
+          <div id="nightFields" class="stack">
+            <label class="inline"><input type="checkbox" name="nightUseSensor"> Use the tablet's light sensor if it has one</label>
+            <label class="inline sensorOnly">Dark below <input name="nightDarkLux" type="number" min="0" max="1000" step="1" class="narrow"> lux
+              <span class="muted small">(a lamp-lit room is ~50+, lights off ~0–5)</span></label>
+            <div class="row">
+              <span class="muted small" id="scheduleLabel">Schedule</span>
+              <label class="inline">from <input name="nightStart" type="time"></label>
+              <label class="inline">to <input name="nightEnd" type="time"></label>
+            </div>
+            <label class="inline">Dimmed brightness <input name="nightBrightness" type="number" min="1" max="100" step="1" class="narrow">%</label>
+          </div>
+        </fieldset>
+        <label class="inline">Radar zoom <input name="radarZoom" type="number" min="3" max="12" class="narrow"></label>
+        <button type="submit" class="primary">Save settings</button>
+        <span id="settingsMsg" class="muted small"></span>
+      </form>
+    </section>
+
+    <section class="card wide">
+      <h2>REST API</h2>
+      <p class="muted small">Send alerts from scripts, Home Assistant, cameras, etc. <span id="authNote"></span></p>
+      <pre id="apiExamples"></pre>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" hidden></div>
+  <script src="app.js" type="module"></script>
+</body>
+</html>

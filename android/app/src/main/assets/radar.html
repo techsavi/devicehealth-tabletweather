@@ -1,0 +1,101 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0b1220; }
+    #map { position: fixed; inset: 0; }
+    .leaflet-container { background: #0b1220; font-family: sans-serif; }
+    .leaflet-control-attribution { background: rgba(0,0,0,.45) !important; color: #8b98a5 !important; font-size: 10px; }
+    .leaflet-control-attribution a { color: #8b98a5 !important; }
+    #hud {
+      position: absolute; top: 14px; left: 14px; z-index: 1000;
+      background: rgba(8,13,21,.72); color: #f2f6fa; border-radius: 12px;
+      padding: 8px 14px; font: 600 20px sans-serif;
+    }
+    #hud small { display: block; font-weight: 400; font-size: 13px; color: #b4c1d0; }
+    #progress { position: absolute; left: 0; right: 0; bottom: 0; height: 5px; z-index: 1000; background: rgba(255,255,255,.08); }
+    #progress div { height: 100%; background: #5cb2ff; transition: width .3s; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="hud">Loading radar…</div>
+  <div id="progress"><div></div></div>
+  <script>
+    /*CONFIG*/
+    const cfg = window.CONFIG || { lat: 28.4294, lon: -81.3089, zoom: 7, clock24h: false };
+    const hud = document.getElementById('hud');
+    const bar = document.querySelector('#progress div');
+
+    const map = L.map('map', { zoomControl: false, attributionControl: true }).setView([cfg.lat, cfg.lon], cfg.zoom);
+    map.createPane('labels').style.zIndex = 450;
+    map.getPane('labels').style.pointerEvents = 'none';
+    // Esri's dark gray canvas: keyless, dark, with labels on a separate layer drawn above the radar.
+    const esri = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas';
+    const esriAttr = 'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors';
+    L.tileLayer(`${esri}/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}`, { maxNativeZoom: 16, maxZoom: 19, attribution: esriAttr }).addTo(map);
+    L.tileLayer(`${esri}/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}`, { maxNativeZoom: 16, maxZoom: 19, pane: 'labels' }).addTo(map);
+    map.attributionControl.addAttribution('Radar &copy; <a href="https://www.rainviewer.com/">RainViewer</a>');
+    L.circleMarker([cfg.lat, cfg.lon], { radius: 8, color: '#fff', weight: 3, fillColor: '#5cb2ff', fillOpacity: 1, pane: 'labels' }).addTo(map);
+
+    let frames = [];
+    let layers = new Map();
+    let idx = 0;
+    let timer = null;
+
+    const fmtTime = (unix) => new Date(unix * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: !cfg.clock24h });
+
+    function layerFor(host, frame) {
+      let layer = layers.get(frame.path);
+      if (!layer) {
+        // RainViewer's free tiles stop at zoom 7; Leaflet upscales them beyond that.
+        layer = L.tileLayer(`${host}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`, { opacity: 0, maxNativeZoom: 7, maxZoom: 19, zIndex: 10 });
+        layer.addTo(map);
+        layers.set(frame.path, layer);
+      }
+      return layer;
+    }
+
+    async function load() {
+      try {
+        const res = await fetch('https://api.rainviewer.com/public/weather-maps.json', { cache: 'no-store' });
+        const data = await res.json();
+        const past = (data.radar && data.radar.past) || [];
+        const nowcast = (data.radar && data.radar.nowcast) || [];
+        frames = past.map((f) => ({ ...f, forecast: false })).concat(nowcast.map((f) => ({ ...f, forecast: true })));
+        const keep = new Set(frames.map((f) => f.path));
+        for (const [path, layer] of layers) if (!keep.has(path)) { map.removeLayer(layer); layers.delete(path); }
+        frames.forEach((f) => (f.layer = layerFor(data.host, f)));
+        if (!timer) { idx = 0; step(); }
+      } catch (e) {
+        hud.textContent = 'Radar unavailable';
+        setTimeout(load, 60000);
+      }
+    }
+
+    function step() {
+      if (!frames.length) { timer = null; return; }
+      idx = (idx + 1) % frames.length;
+      frames.forEach((f, i) => f.layer.setOpacity(i === idx ? 0.8 : 0));
+      const f = frames[idx];
+      const latestPast = frames.filter((x) => !x.forecast).length - 1;
+      hud.innerHTML = `${fmtTime(f.time)}<small>${f.forecast ? 'forecast' : idx === latestPast ? 'latest' : 'past'}</small>`;
+      bar.style.width = `${((idx + 1) / frames.length) * 100}%`;
+      // Linger on the most recent observation so the current picture is easy to read.
+      timer = setTimeout(step, idx === latestPast ? 2500 : 550);
+    }
+
+    // The WebView may lay out after the script runs; Leaflet needs the real size to request tiles.
+    window.addEventListener('resize', () => map.invalidateSize());
+    setTimeout(() => map.invalidateSize(), 300);
+    setTimeout(() => map.invalidateSize(), 1500);
+
+    load();
+    setInterval(load, 5 * 60 * 1000);
+  </script>
+</body>
+</html>

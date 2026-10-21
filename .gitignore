@@ -1,0 +1,9 @@
+node_modules/
+server/data/
+server/config.json
+.gradle/
+.kotlin/
+build/
+local.properties
+*.iml
+.idea/
